@@ -55,7 +55,6 @@ void change_band(char *request);
 
 /* command  buffer for commands received from the remote */
 struct Queue q_remote_commands;
-struct Queue q_zbitx_console;
 
 /* Front Panel controls */
 char pins[15] = {0, 2, 3, 6, 7, 
@@ -213,14 +212,9 @@ int console_current_line = 0;
 int	console_selected_line = -1;
 struct Queue q_web;
 
-static uint8_t zbitx_available = 0;
 int update_logs = 0;
 #define ZBITX_I2C_ADDRESS 0xa
-void zbitx_init();
-void zbitx_poll(int all);
-void zbitx_pipe(int style, char *text);
 void zbitx_get_spectrum(char *buff);
-void zbitx_write(int style, char *text);
 
 // event ids, some of them are mapped from gtk itself
 #define FIELD_DRAW 0
@@ -608,7 +602,7 @@ struct field main_controls[] = {
 	{"r1:high", NULL, 580, -350, 50, 50, "HIGH", 40, "3000", FIELD_NUMBER, FONT_FIELD_VALUE, 
 		"", 100, 10000, 50, 0, DIGITAL_CONTROL},
 
-	{"spectrum", do_spectrum, 400, 101, 400, 100, "SPECTRUM", 70, "7000 KHz", FIELD_STATIC, FONT_SMALL, 
+	{"spectrum", do_spectrum, 400, 101, 400, 100, "SPECTRUM", 70, "", FIELD_STATIC, FONT_SMALL, 
 		"", 0,0,0, COMMON_CONTROL},  
 	{"#status", do_status, -1000, -1000, 400, 29, "STATUS", 70, "7000 KHz", FIELD_STATIC, FONT_SMALL, 
 		"status", 0,0,0, 0},  
@@ -975,6 +969,31 @@ int remote_update_field(int i, char *text){
 }
 
 
+int get_field_timestamped(int i, char *text, uint32_t *timestamp){
+
+	if (i > sizeof(main_controls)/sizeof(struct field))
+		return -1; 
+
+	struct field * f = active_layout + i;
+	if (f->cmd[0] == 0)
+		return -1;
+
+	*timestamp = f->updated_at;	
+	//always send status afresh
+	if (!strcmp(f->label, "STATUS")){
+		//send time
+		time_t now = time_sbitx();
+		struct tm *tmp = gmtime(&now);
+		sprintf(text, "STATUS %04d/%02d/%02d %02d:%02d:%02dZ",  
+			tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday, tmp->tm_hour, tmp->tm_min, tmp->tm_sec); 
+	}
+	else {
+		strcpy(text, f->label);
+		strcat(text, " ");
+		strcat(text, f->value);
+	}	
+	return 0;
+}
 // log is a special field that essentially is a like text
 // on a terminal
 
@@ -1086,12 +1105,6 @@ int console_init_next_line(){
 	return console_current_line;
 }
 
-void write_to_remote_app(int style, char *text){
-	remote_write("{");
-	remote_write(text);
-	remote_write("}");
-}
-
 void write_console(int style, char *raw_text){
 	/*char directory[200];	//dangerous, find the MAX_PATH and replace 200 with it
 	char *path = getenv("HOME");
@@ -1101,15 +1114,16 @@ void write_console(int style, char *raw_text){
     //tlog("write_console", text, style);
 	char *text;
 	char decorated[1000];
+	char remote_text[2000];
 	
 	if (strlen(raw_text) == 0)
 		return;
-
+	sprintf(remote_text, "%d %s\n", style, raw_text);
+	remote_write(remote_text);
 	hd_decorate(style, raw_text, decorated);
 	text = decorated;
 	web_write(style, text);
-	zbitx_write(style, text);
-
+	sprintf(remote_text, "%d %s", style, text);
 	//move to a new line if the style has changed
 	if (style != console_style){
 		q_write(&q_web, '{');
@@ -1133,17 +1147,6 @@ void write_console(int style, char *raw_text){
 		}
 	}
 
-
-/*
-	//write to the scroll
-	FILE *pf = fopen(directory, "a");
-	if (pf){
-		fwrite(text, strlen(text), 1, pf);
-		fclose(pf);
-		pf = NULL;
-	}
-*/	
-	write_to_remote_app(style, raw_text);
 
 	int console_line_max = MIN(console_cols, MAX_LINE_LENGTH);
 	while(*text){
@@ -1255,7 +1258,6 @@ void draw_field(GtkWidget *widget, cairo_t *gfx, struct field *f){
 
 	//push this to the web as well
 	
-	f->is_dirty = 0;
 	if (f->x <= -1000)
 		return;
 
@@ -1267,6 +1269,8 @@ void draw_field(GtkWidget *widget, cairo_t *gfx, struct field *f){
 			return;
 		}
 	}
+
+	f->is_dirty = 0;
 
 	if (f_focus == f)
 		fill_rect(gfx, f->x, f->y, f->width,f->height, COLOR_FIELD_SELECTED);
@@ -3997,28 +4001,19 @@ void set_radio_mode(char *mode){
 
 }
 
+/*
 void zbitx_write(int style, char *text){
 	char buffer[256];
 
-	if (!zbitx_available){
-		return;
-	}
-
 	if (strlen(text) > sizeof(buffer) - 10){
-		printf("*zbitx_write update is oversized\n");
 		return;
 	}
 	sprintf(buffer, "%d %s", style, text);
-	char *p = buffer;		
-	if (q_zbitx_console.overflow)
-		q_empty(&q_zbitx_console);
-	while (*p)
-		q_write(&q_zbitx_console, *p++);
-	q_write(&q_zbitx_console, 0);
+	remote_write(buffer);
 }
-
+*/
 //cramp all the spectrum into 250 points
-void zbitx_get_spectrum(char *buff){
+void remote_get_spectrum(char *buff){
 
   int n_bins = (int)((1.0 * spectrum_span) / 46.875);
   //the center frequency is at the center of the lower sideband,
@@ -4028,7 +4023,7 @@ void zbitx_get_spectrum(char *buff){
 
   int j;
   if (in_tx){
-    strcpy(buff, "WF ");
+		strcpy(buff, "WF ");
 		j = strlen(buff);
 		float step = MOD_MAX/250.0;
 		//printf("wf on tx %d / %d", step, MOD_MAX);
@@ -4044,7 +4039,7 @@ void zbitx_get_spectrum(char *buff){
     }
   }
   else{
-    strcpy(buff, "WF ");
+		strcpy(buff, "WF ");
 		j = strlen(buff);
 		float step = (1.0  * (ending_bin - starting_bin))/250.0;
 		float i = 1.0 * starting_bin;
@@ -4087,7 +4082,7 @@ static void zbitx_logs(){
 	}
 	fclose(pf);
 }
-
+/*
 void zbitx_poll(int all){
 	char buff[3000];
 	static unsigned int last_update = 0;
@@ -4177,38 +4172,7 @@ void zbitx_poll(int all){
 	}
 	last_update = this_time;
 }
-
-void zbitx_init(){
-	char buff[100];
-	sprintf(buff, "9 %s}", VER_STR);
- 	int e = i2cbb_write_i2c_block_data (ZBITX_I2C_ADDRESS, '{', 
-		strlen(buff), buff);
-
-
-	if (!e){
-		printf("zBitx front panel detected\n");
-		zbitx_available = 1;
-
-
- 		e = i2cbb_write_i2c_block_data (ZBITX_I2C_ADDRESS, '{', 
-		strlen(VER_STR), VER_STR);
-
-		FILE *pf = popen("hostname -I", "r");
-		if (pf){
-			char ip_str[100], buff[100];
-			fgets(ip_str, 100, pf);
-			pclose(pf);
-			//terminate the string at the first space
-			char *p = strchr(ip_str, ' ');
-			if (p){
-				*p = 0;
-				sprintf(buff, "9 \nzBitx on http://%s\n}", ip_str);
- 				i2cbb_write_i2c_block_data (ZBITX_I2C_ADDRESS, '{', 
-					strlen(buff), buff);
-			}
-		}
-	}
-}
+*/
 
 int next_sync = 0; //sets to -1  after a network update
 void try_ntp(){
@@ -4307,9 +4271,6 @@ gboolean ui_tick(gpointer gook){
 		char response[6], cmd[10];
 		cmd[0] = 1;
 
-		if (zbitx_available)
-			zbitx_poll(0);
-
 		try_ntp();
 
 		if(in_tx){
@@ -4383,7 +4344,7 @@ gboolean ui_tick(gpointer gook){
 	//update_field(get_field("#text_in")); //modem might have extracted some text
 
   hamlib_slice();
-	remote_slice();
+	//remote_slice();
 	save_user_settings(0);
 
  
@@ -4420,7 +4381,6 @@ void ui_init(int argc, char *argv[]){
 #pragma pop
 */
 	q_init(&q_web, 5000);
-	q_init(&q_zbitx_console, 1000);
 
   window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   gtk_window_set_default_size(GTK_WINDOW(window), 800, 480);
@@ -5268,13 +5228,9 @@ int main( int argc, char* argv[] ) {
 	// you don't want to save the recently loaded settings
 	settings_updated = 0;
   hamlib_start();
-	remote_start();
+	remote_start_thread();
 
 	rtc_read();
-	zbitx_init();
-
-	if (zbitx_available)
-		zbitx_poll(1); // send all the field values
 
 	//switch to maximum priority
 	struct sched_param sch;

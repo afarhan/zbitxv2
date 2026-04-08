@@ -156,3 +156,6 @@ this doesnt work with touch as it needs double click
 fro Accessories->File Manager,
 from edit menu go to preferences and in the general tab turn on 
 open files wiht single click
+
+Note: FT8 libary needs to be compiled witha make. 
+To generate the .a (archive library) file, run sudo make install

@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <stdint.h>
 #include "sdr_ui.h"
 
 int macro_exec(int key, char *dest);

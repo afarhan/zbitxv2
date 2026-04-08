@@ -1,3 +1,4 @@
-data/hw_settings.ini
-data/user_settings.ini
-sbitx
+*.o
+data/*.db
+*.swp
+data/results_row.txt

@@ -13,110 +13,198 @@
 #include <fcntl.h>
 #include <complex.h>
 #include <fftw3.h>
+#include <assert.h>
+#include <stdint.h>
+#include <wiringPi.h>
+#include <pthread.h>
+#include <stdbool.h>
 #include "sdr.h"
 #include "sdr_ui.h"
+#include "logbook.h"
 
 static int welcome_socket = -1, data_socket = -1;
 #define MAX_DATA 1000
 static char incoming_data[MAX_DATA];
-static int incoming_ptr;
+static unsigned int remote_updated_on = 0;
 
-#define MAX_LINE 30
+#define MAX_THREADS 10
+int nthreads = 0;
 
-void remote_start() {
-    char buffer[MAX_DATA];
-    struct sockaddr_in serverAddr;
-    struct sockaddr_storage serverStorage;
-    socklen_t addr_size;
+struct remote {
+	unsigned int updated_on;
+	int fd;
+};
 
-    welcome_socket = socket(PF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+static struct remote remote_table[MAX_THREADS];
+
+static void remote_send(int fd, char *m) {
+  send(fd, m, strlen(m), 0);
+}
+
+static void remote_update(struct remote *r){
+	int i;
+	uint32_t timestamp;
+	char buff[5000];
+	//get_console(c);
+
+	unsigned int  now = millis();	
+	i = 0;
+	while(1){
+		if(get_field_timestamped(i, buff, &timestamp) == -1)
+			break;
+		i++;
+		if (timestamp >= r->updated_on){
+			strcat(buff, "\n");
+			remote_send(r->fd, buff);
+		}
+	}
+	remote_get_spectrum(buff);
+	strcat(buff, "\n");
+	remote_send(r->fd, buff);	
+	//web_get_spectrum(buff);
+	//strcat(buff, "\n");
+	//remote_send(buff);
+	r->updated_on = now;
+}
+
+//called from the main loop with notifications 
+void remote_write(char *m){
+	int i;
+
+	for (int i = 0; i < nthreads; i++)
+		remote_send(remote_table[i].fd, m);
+}
+
+static void get_logs(struct remote *r){
+	char logbook_path[200];
+	char row_response[1000], row[1000];
+	char query[100];
+	int	row_id;
+
+	printf("remote: sending logs\n");
+	query[0] = 0;
+	row_id = -1;
+	logbook_query(NULL, row_id, logbook_path);
+	FILE *pf = fopen(logbook_path, "r");
+	if (!pf)
+		return;
+	while(fgets(row, sizeof(row), pf)){
+		sprintf(row_response, "QSO %s\n", row);
+		printf("remote: log > %s\n", row_response);
+		remote_send(r->fd, row_response); 
+	}
+	fclose(pf);
+}
+
+void *fn_remote_client(void *fd_client){
+	char buffer[5000];
+	unsigned int last_request, now;
+  struct timeval tv;
+	int len, data_socket;
+	int update_logs = 0;
+
+	data_socket = (intptr_t)fd_client;
+
+	struct remote *r = remote_table + nthreads++;
+	r->fd = data_socket;
+	r->updated_on = 0;
+	last_request = millis(); 
+	printf("remote: insidie  a new thread for socketc %d\n", data_socket);
   
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(8081);
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
-    memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);  
+	//this section was changed by W9JES
+  tv.tv_sec = 2; //gone in 2 seconds
+  tv.tv_usec = 0;
+	setsockopt(data_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
-    /* Bind the address struct to the socket */
-    bind(welcome_socket, (struct sockaddr *) &serverAddr, sizeof(serverAddr));
+	printf("remote: started new client, connection count is %d\n", nthreads);
+	while(1){
 
-    /* Listen on the socket, with 5 max connection requests queued */
-    if(listen(welcome_socket,5) != 0)
-        printf("telnet listen() Error\n");
-    incoming_ptr = 0;
+		now = millis();
+		memset(buffer, 0, sizeof(buffer));
+  	int len = recv(data_socket, buffer, sizeof(buffer), 0);
+
+		//printf("remote [%s]\n", buffer);
+  	if (len > 0){
+    	buffer[len] = '\0'; // Ensure the buffer is null-terminated. Changed by W9JES
+    	// Strip off the last \r or \n
+   		 buffer[strcspn(buffer, "\r\n")] = '\0';
+	  	last_request = millis();
+    	if (buffer[0] == '?') 
+				remote_update(r);
+			else if (!strcmp(buffer, "OPEN "))
+				get_logs(r);
+    	else if(strlen(buffer)){
+    		printf("Received on remote : [%s]\n", buffer);
+        remote_execute(buffer);
+			}
+			else if (update_logs){
+				get_logs(r);
+				update_logs = 0;
+			}
+   	} else if (last_request + 5000 < now){
+			printf("remote: timeout\n");
+			break;
+		}
+	}
+  puts("remote:  client closed the connection.\n");
+  close(r->fd);
+  r->fd = 0;
+	
+	nthreads--;
 }
 
-void remote_send(char *m) {
-    send(data_socket, m, strlen(m), 0);
+void *fn_remote_listener(void *nothing){
+	char buffer[MAX_DATA];
+  struct sockaddr_in server_addr;
+  struct sockaddr_in client_addr;
+ 	struct sockaddr_storage serverStorage;
+  socklen_t addr_size;
+	int server_socket;
+
+  server_socket = socket(PF_INET, SOCK_STREAM, 0);
+	memset(remote_table, 0, sizeof(remote_table));
+  
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_port = htons(8081);
+  server_addr.sin_addr.s_addr = INADDR_ANY;
+  memset(server_addr.sin_zero, '\0', sizeof server_addr.sin_zero);  
+
+  /* Bind the address struct to the socket */
+  if(bind(server_socket, (struct sockaddr *) &server_addr, sizeof(server_addr)) != 0){
+		printf("remote: server couldn't start on port 8081\n");
+		return NULL;
+	}
+
+  /* Listen on the socket, with 5 max connection requests queued */
+  if(listen(server_socket,5) != 0){
+    printf("remote: tcp listen() Error\n");
+		return NULL;
+	}
+	printf("remote: listening to connections on port 8081\n");
+
+	while(1){
+		int fd = -1;
+		pthread_t new_client;
+		if ((fd = accept(server_socket, (struct sockaddr *)&client_addr, &addr_size)) < 0){
+			printf("remote: client connection failed\n");
+			continue;
+		}
+		else if (nthreads < MAX_THREADS-1){
+			printf("remote: spawing a new thread for socketc %d\n", fd);
+			pthread_create(&new_client, NULL, fn_remote_client, (void*)(intptr_t)fd);
+		}
+		else{
+			printf("remote: dropped connection as too many clients are connected\n");
+			close(fd);
+		}
+
+	}
+	printf("remote: never reaches here\n");
+	return NULL;
 }
 
-void remote_init() {
-    remote_send("\033[1;1H"); //goto 1,1
-    remote_send("\033[r"); //clear the scrollable area
-    remote_send("\033[2J"); //clear the screen
-    remote_send("\033[25;1r");
 
-    remote_send(VER_STR);
-    remote_send("\r\n");
-}
-
-void remote_write(char *message) {
-    if (data_socket < 0)
-        return;
-
-    int e = send(data_socket, message, strlen(message), 0);
-    if (e >= 0)
-        return;
-    close(data_socket);
-    data_socket = -1;
-}
-
-void remote_slice() {
-    struct sockaddr_storage server_storage;
-    socklen_t addr_size;
-    int e, len;
-    char buffer[1024];
-
-    if (data_socket == -1) {
-        addr_size = sizeof server_storage;
-        e = accept(welcome_socket, (struct sockaddr *) &server_storage, &addr_size);
-        if (e == -1)
-            return;
-        puts("Accepted telnet connection\n");
-        incoming_ptr = 0;
-        data_socket = e;
-        fcntl(data_socket, F_SETFL, fcntl(data_socket, F_GETFL) | O_NONBLOCK);
-
-        // init the console
-        remote_init();
-    } else { 
-        //this section was changed by W9JES
-        len = recv(data_socket, buffer, sizeof(buffer), 0);
-        if (len > 0) {
-            buffer[len] = '\0'; // Ensure the buffer is null-terminated. Changed by W9JES
-            printf("Received on remote : [%s]\n", buffer);
-            // Strip off the last \r or \n
-            buffer[strcspn(buffer, "\r\n")] = '\0';
-            if (buffer[0] == '?') {
-                char response[2000];
-                get_field_value_by_label(buffer+1, response);
-                strcat(response, "\n");
-                remote_write(response);
-            } else if(strlen(buffer)) {
-                remote_execute(buffer);
-            }
-        } else if (len == 0) {
-            // The recv function returned 0 -> the client closed the connection. Added by w9JES
-            puts("Client closed the connection. Restarting to listen...");
-            close(data_socket);
-            data_socket = -1;
-        } else {
-            // An error occurred, check if it's EAGAIN or EWOULDBLOCK to keep the connection open. Modifed by W9JES
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
-                return; // No data available right now, try again later
-            // For other errors, close the socket.
-            puts("Connection error. Dropping the connection...");
-            close(data_socket);
-            data_socket = -1;
-        }
-    }
+void remote_start_thread(){
+	pthread_t listener_thread;
+	pthread_create(&listener_thread, NULL, fn_remote_listener, (void*)NULL);
 }

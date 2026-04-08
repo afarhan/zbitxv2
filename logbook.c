@@ -714,6 +714,7 @@ void add_to_list(GtkListStore *list_store, const gchar *col1, const gchar *col2,
 		const gchar *col4, const gchar *col5, const gchar *col6, 
 		const gchar *col7, const gchar *col8, const gchar *col9, const gchar *col10) {
     GtkTreeIter iter;
+
     gtk_list_store_append(list_store, &iter);
     gtk_list_store_set(list_store, &iter,
                        0, col1,
@@ -777,39 +778,49 @@ int logbook_fill(int from_id, int count, char *query){
 	while (sqlite3_step(stmt) == SQLITE_ROW) {
 		int i;
 		int num_cols = sqlite3_column_count(stmt);
+
+		id[0] = qso_time[0] = qso_date[0] = freq[0] = mode[0] = callsign[0] =
+			rst_recv[0] = exchange_recv[0] = rst_sent[0] = exchange_sent[0] =
+			comments[0] = 0;
+
 		for (i = 0; i < num_cols; i++){
 
 			char const *col_name = sqlite3_column_name(stmt, i);
+			char const *value = sqlite3_column_text(stmt, i);
+			if (!value)
+				continue;
+
 			if (!strcmp(col_name, "id"))
-				strcpy(id, sqlite3_column_text(stmt, i));
+				strcpy(id, value);
 			else if (!strcmp(col_name, "qso_date"))
-				strcpy(qso_date, sqlite3_column_text(stmt, i));
+				strcpy(qso_date, value);
 			else if (!strcmp(col_name, "qso_time"))
-				strcpy(qso_time, sqlite3_column_text(stmt, i));
+				strcpy(qso_time, value);
 			else if (!strcmp(col_name, "qso_time"))
-				strcpy(qso_time, sqlite3_column_text(stmt, i));
+				strcpy(qso_time, value);
 			else if (!strcmp(col_name, "freq"))
-				strcpy(freq, sqlite3_column_text(stmt, i));
+				strcpy(freq, value);
 			else if (!strcmp(col_name, "mode"))
-				strcpy(mode, sqlite3_column_text(stmt, i));
+				strcpy(mode, value);
 			else if (!strcmp(col_name, "callsign_recv"))
-				strcpy(callsign, sqlite3_column_text(stmt, i));
+				strcpy(callsign, value);
 			else if (!strcmp(col_name, "rst_sent"))
-				strcpy(rst_sent, sqlite3_column_text(stmt, i));
+				strcpy(rst_sent, value);
 			else if (!strcmp(col_name, "rst_recv"))
-				strcpy(rst_recv, sqlite3_column_text(stmt, i));
+				strcpy(rst_recv, value);
 			else if (!strcmp(col_name, "exch_sent"))
-				strcpy(exchange_sent, sqlite3_column_text(stmt, i));
+				strcpy(exchange_sent, value);
 			else if (!strcmp(col_name, "exch_recv"))
-				strcpy(exchange_recv, sqlite3_column_text(stmt, i));
+				strcpy(exchange_recv, value);
 			else if (!strcmp(col_name, "comments"))
-				strcpy(comments, sqlite3_column_text(stmt, i));
+				strcpy(comments, value);
 		}
 	
 		strcat(qso_date, " ");
 		strcat(qso_date, qso_time);	
-		add_to_list(list_store, id,  qso_date, freq, mode,
-		callsign, rst_sent, exchange_sent, rst_recv, exchange_recv, comments);
+		if (qso_date[0] != 0 && callsign[0] != 0)
+			add_to_list(list_store, id,  qso_date, freq, mode,
+				callsign, rst_sent, exchange_sent, rst_recv, exchange_recv, comments);
 	}
 	sqlite3_finalize(stmt);
 }
