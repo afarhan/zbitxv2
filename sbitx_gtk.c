@@ -4174,18 +4174,6 @@ void zbitx_poll(int all){
 }
 */
 
-int next_sync = 0; //sets to -1  after a network update
-void try_ntp(){
-	const char* ntp_server = "time.google.com";
-
-	if (next_sync > millis() || next_sync == -1)
-		return;
- 
-  if(sync_sbitx_time(ntp_server) != -1)
-		next_sync = -1;
-	else 
-		next_sync = millis() + 30000;
-}
 
 gboolean ui_tick(gpointer gook){
 	int static ticks = 0;
@@ -4270,8 +4258,6 @@ gboolean ui_tick(gpointer gook){
 
 		char response[6], cmd[10];
 		cmd[0] = 1;
-
-		try_ntp();
 
 		if(in_tx){
 			char buff[10];
@@ -5152,7 +5138,7 @@ int main( int argc, char* argv[] ) {
 		setup("plughw:0,0");	// otherwise use the default audio output device
 
 	const char* ntp_server = "time.google.com";
-  sync_sbitx_time(ntp_server);
+  ntp_sync_thread(ntp_server);
 
 	struct field *f;
 	f = active_layout;

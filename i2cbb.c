@@ -189,12 +189,16 @@ static int i2c_read_bit() {
 
 // Write a byte to I2C bus. Return 0 if ack by the slave.
 static int i2c_write_byte(int send_start, int send_stop, uint8_t byte) {
+		static int mutex = 0;
     unsigned bit;
     int nack = 0;
 
-		static int mutex = 0;
-		if (mutex)
+		
+		for (int retry = 0; mutex && retry < 100; retry++){
 			printf("double!\n");
+			delay(10);
+		}
+
 		mutex++;
     if (send_start) {
         i2c_start_cond();

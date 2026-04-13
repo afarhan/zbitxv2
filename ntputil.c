@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include "ntputil.h"
 #include <time.h>
+#include <pthread.h>
 #include <wiringPi.h>
 #include "sdr_ui.h"
 #include  "i2cbb.h"
@@ -139,7 +140,7 @@ long getaddress(const char* host) {
     return *((long*)(pent->h_addr));
 }
 
-int ntp_request(const char* ntp_server) {
+static int ntp_request(const char* ntp_server) {
     struct sockaddr_in addr;
     int retryAfter = 500, i, len, ret;
     int nretries = 10;
@@ -148,10 +149,10 @@ int ntp_request(const char* ntp_server) {
     fd_set fd;
     struct ntp_packet reply;
 
-    printf("Resolving NTP server at %s\n", ntp_server);
+    //printf("Resolving NTP server at %s\n", ntp_server);
     uint32_t address = getaddress(ntp_server);
     if (!address) {
-        printf("NTP server is not reachable right now\n");
+        //printf("NTP server is not reachable right now\n");
         return -1;
     }
 
@@ -215,14 +216,21 @@ int ntp_request(const char* ntp_server) {
     return txTm;
 }
 
-int sync_sbitx_time(const char* ntp_server) {
-  time_t current_time;
-  time(&current_time);  // Get current system time
+static void *fn_try_ntp(void *server){
+	char server_url[128];
+	strcpy(server_url, (char *)server);
+	while(1){
+		if(ntp_request(server_url) != -1)
+			break;
+		sleep(10);
+	}
+	printf("RTC synchronized with the NTP server %s\n", server_url);
+	rtc_read();
+	return NULL;
+}
 
-  time_t ntp_time = ntp_request(ntp_server);
-  if (ntp_time == -1) {
-    return - 1;
-  }
-	printf("Time synchronized with the network.\n");
-	return 0;
+
+void ntp_sync_thread(const char *ntp_server){
+	pthread_t ntp_thread;
+	pthread_create(&ntp_thread, NULL, fn_try_ntp, (void*)ntp_server);
 }
