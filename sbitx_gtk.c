@@ -525,7 +525,7 @@ struct field main_controls[] = {
 	{ "r1:agc", NULL, 415, 5, 40, 40, "AGC", 40, "SLOW", FIELD_SELECTION, FONT_FIELD_VALUE, 
 		"OFF/SLOW/MED/FAST", 0, 1024, 1,COMMON_CONTROL},
 	{ "tx_power", NULL, 455, 5, 40, 40, "DRIVE", 40, "40", FIELD_NUMBER, FONT_FIELD_VALUE, 
-		"", 0, 100, 5,COMMON_CONTROL},
+		"", 0, 100, 1,COMMON_CONTROL},
 
 
 	{ "r1:freq", do_tuning, 600, 0, 150, 49, "FREQ", 5, "14000000", FIELD_NUMBER, FONT_LARGE_VALUE, 
@@ -1802,6 +1802,10 @@ void init_waterfall(){
 		// format,         alpha?, bit,  widht,    height, rowstride, destryfn, data
 
 //	printf("%ld return from pixbuff", (int)waterfall_pixbuf);	
+}
+
+int is_tx(){
+	return in_tx;
 }
 
 void draw_tx_meters(struct field *f, cairo_t *gfx){
@@ -3802,30 +3806,6 @@ void key_isr(void){
 	ptt_state = digitalRead(PTT);
 }
 
-void query_swr(){
-	uint8_t response[4];
-	int16_t vfwd, vref;
-	int  vswr;
-	char buff[20];
-
-	if (!in_tx)
-		return;
-	if(i2cbb_read_i2c_block_data(0x8, 0, 4, response) == -1)
-		return;
-
-	vfwd = vref = 0;
-
-	memcpy(&vfwd, response, 2);
-	memcpy(&vref, response+2, 2);
-	if (vref >= vfwd)
-		vswr = 100;
-	else
-		vswr = (10*(vfwd + vref))/(vfwd-vref);
-	sprintf(buff,"%d", (vfwd * 40)/68);
-	set_field("#fwdpower", buff);		
-	sprintf(buff, "%d", vswr);
-	set_field("#vswr", buff);
-}
 
 void hw_init(){
 	wiringPiSetup();
@@ -4023,7 +4003,7 @@ void remote_get_spectrum(char *buff){
 
   int j;
   if (in_tx){
-		strcpy(buff, "WF ");
+		strcpy(buff, "IN_TX 1\nWF ");
 		j = strlen(buff);
 		float step = MOD_MAX/250.0;
 		//printf("wf on tx %d / %d", step, MOD_MAX);
@@ -4039,7 +4019,7 @@ void remote_get_spectrum(char *buff){
     }
   }
   else{
-		strcpy(buff, "WF ");
+		strcpy(buff, "IN_TX 0\nWF ");
 		j = strlen(buff);
 		float step = (1.0  * (ending_bin - starting_bin))/250.0;
 		float i = 1.0 * starting_bin;
@@ -4929,10 +4909,14 @@ void cmd_exec(char *cmd){
 		logbook_delete(atoi(args));
 		update_logs = 1;
 	}
-	else if (!strcmp(exec, "power"))
+	else if (!strcmp(exec, "power")){
+		fwdpower = atoi(args);
 		set_field("#fwdpower", args);
-	else if (!strcmp(exec, "vswr") && in_tx)
+	}
+	else if (!strcmp(exec, "vswr") && in_tx){
+		vswr = atoi(args);
 		set_field("#vswr", args);
+	}
 	else if (!strcmp(exec, "vbatt"))
 		set_field("#batt", args);
 	else if (!strcmp(exec, "metercal")){

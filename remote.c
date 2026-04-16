@@ -125,22 +125,27 @@ void *fn_remote_client(void *fd_client){
 
 		//printf("remote [%s]\n", buffer);
   	if (len > 0){
-    	buffer[len] = '\0'; // Ensure the buffer is null-terminated. Changed by W9JES
+    	buffer[len] = '\0'; // Ensure the buffer is null-terminated: W9JES
     	// Strip off the last \r or \n
-   		 buffer[strcspn(buffer, "\r\n")] = '\0';
-	  	last_request = millis();
-    	if (buffer[0] == '?') 
-				remote_update(r);
-			else if (!strcmp(buffer, "OPEN "))
-				get_logs(r);
-    	else if(strlen(buffer)){
-    		printf("Received on remote : [%s]\n", buffer);
-        remote_execute(buffer);
+			char *context;
+			char *t = strtok_r(buffer, "\r\n", &context);
+			while (t){
+				//buffer[strcspn(buffer, "\r\n")] = '\0';
+				last_request = millis();
+				if (*t == '?') 
+					remote_update(r);
+				else if (!strcmp(buffer, "OPEN "))
+					get_logs(r);
+				else if(strlen(t)){
+					printf("Received on remote : [%s]\n", t);
+					remote_execute(t);
+				}
+				t = strtok_r(NULL, "\r\n", &context);
 			}
-			else if (update_logs){
+		}
+		else if (update_logs){
 				get_logs(r);
 				update_logs = 0;
-			}
    	} else if (last_request + 5000 < now){
 			printf("remote: timeout\n");
 			break;
