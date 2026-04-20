@@ -11,6 +11,7 @@ For existing zbitx v1 users
 This change requires upgrade of the zbitx front panel firmware (available as the zbitx_front_panel_v2.uf2 file in this repo) as well. 
 
 The original zbitx users can try out this software by installing it side by side. This is done it two steps:
+
 # Step 1: upgrade the software on the zbitx's raspberry pi
 - flash the zbitx_front_panel_v2.uf2 into the front panel (the instructions are in the zbitx page 22)
 - Connect a keyboard and mouse to your zbitx and boot up the zbitx.
