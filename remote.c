@@ -38,7 +38,7 @@ struct remote {
 static struct remote remote_table[MAX_THREADS];
 
 static void remote_send(int fd, char *m) {
-  send(fd, m, strlen(m), 0);
+  send(fd, m, strlen(m), MSG_DONTWAIT);
 }
 
 static void remote_update(struct remote *r){
@@ -137,7 +137,7 @@ void *fn_remote_client(void *fd_client){
 				else if (!strcmp(buffer, "OPEN "))
 					get_logs(r);
 				else if(strlen(t)){
-					printf("Received on remote : [%s]\n", t);
+					//printf("Received on remote : [%s]\n", t);
 					remote_execute(t);
 				}
 				t = strtok_r(NULL, "\r\n", &context);
