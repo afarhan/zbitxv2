@@ -38,7 +38,9 @@ struct remote {
 static struct remote remote_table[MAX_THREADS];
 
 static void remote_send(int fd, char *m) {
+	printf("<%s", m);
   send(fd, m, strlen(m), MSG_DONTWAIT);
+	printf(">\n");
 }
 
 static void remote_update(struct remote *r){
@@ -190,6 +192,7 @@ void *fn_remote_listener(void *nothing){
 	while(1){
 		int fd = -1;
 		pthread_t new_client;
+		printf("before accept() ...\n");
 		if ((fd = accept(server_socket, (struct sockaddr *)&client_addr, &addr_size)) < 0){
 			printf("remote: client connection failed\n");
 			continue;
