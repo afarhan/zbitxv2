@@ -3,6 +3,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <string.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
@@ -38,9 +39,9 @@ struct remote {
 static struct remote remote_table[MAX_THREADS];
 
 static void remote_send(int fd, char *m) {
-	printf("<%s", m);
-  send(fd, m, strlen(m), MSG_DONTWAIT);
-	printf(">\n");
+ //send(fd, m, strlen(m), MSG_DONTWAIT);
+ printf("sock %d %s\n", fd, m);
+ send(fd, m, strlen(m), MSG_NOSIGNAL);
 }
 
 static void remote_update(struct remote *r){
@@ -74,7 +75,8 @@ void remote_write(char *m){
 	int i;
 
 	for (int i = 0; i < nthreads; i++)
-		remote_send(remote_table[i].fd, m);
+		//if (remote_table[i].fd)
+			remote_send(remote_table[i].fd, m);
 }
 
 static void get_logs(struct remote *r){
@@ -98,6 +100,18 @@ static void get_logs(struct remote *r){
 	fclose(pf);
 }
 
+struct remote *remote_new(int fd){
+	//see if an existing socket has the same fd
+	for (int i = 0; i < MAX_THREADS; i++)
+		if (remote_table[i].fd == fd)
+			return remote_table + i;
+	
+	for (int i = 0; i < MAX_THREADS; i++)
+		if (remote_table[i].fd == 0)
+			return remote_table + i;
+	return NULL;
+}
+
 void *fn_remote_client(void *fd_client){
 	char buffer[5000];
 	unsigned int last_request, now;
@@ -105,45 +119,69 @@ void *fn_remote_client(void *fd_client){
 	int len, data_socket;
 	int update_logs = 0;
 
-	data_socket = (intptr_t)fd_client;
+	struct sched_param sch;
 
-	struct remote *r = remote_table + nthreads++;
+	//switch to maximum priority
+	sch.sched_priority = sched_get_priority_max(SCHED_FIFO);
+	pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
+
+	data_socket = (intptr_t)fd_client;
+	{ int one = 1; setsockopt(data_socket, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)); }
+	struct remote *r = remote_new(data_socket);
 	r->fd = data_socket;
-	r->updated_on = 0;
-	last_request = millis(); 
+	r->updated_on = millis();
+	printf("remote: new thread with sock %d\n", data_socket);
+	if (!r){
+		printf("remote: max clients reached\n");
+		return NULL;
+	}
 	printf("remote: insidie  a new thread for socketc %d\n", data_socket);
   
 	//this section was changed by W9JES
   tv.tv_sec = 2; //gone in 2 seconds
   tv.tv_usec = 0;
-	setsockopt(data_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+	//setsockopt(data_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
 	printf("remote: started new client, connection count is %d\n", nthreads);
 	while(1){
 
 		now = millis();
 		memset(buffer, 0, sizeof(buffer));
+		printf("<--recv");
   	int len = recv(data_socket, buffer, sizeof(buffer), 0);
-
+		printf(" %d>\n", len);
 		//printf("remote [%s]\n", buffer);
   	if (len > 0){
     	buffer[len] = '\0'; // Ensure the buffer is null-terminated: W9JES
     	// Strip off the last \r or \n
 			char *context;
 			char *t = strtok_r(buffer, "\r\n", &context);
+			int update_count = 0;
 			while (t){
+				putchar('.');
 				//buffer[strcspn(buffer, "\r\n")] = '\0';
-				last_request = millis();
-				if (*t == '?') 
-					remote_update(r);
+				if (*t == '?'){ 
+					if (update_count == 0){
+						remote_update(r);
+						putchar('#');
+					}
+					else 
+						printf("!");
+					update_count++;
+				}
 				else if (!strcmp(buffer, "OPEN "))
 					get_logs(r);
 				else if(strlen(t)){
 					//printf("Received on remote : [%s]\n", t);
 					remote_execute(t);
 				}
+				last_request = now;
 				t = strtok_r(NULL, "\r\n", &context);
 			}
+		}
+		else if (len == 0){
+			printf("remote: eof on %d\n", data_socket);
+			break;
 		}
 		else if (update_logs){
 				get_logs(r);
@@ -155,7 +193,9 @@ void *fn_remote_client(void *fd_client){
 	}
   puts("remote:  client closed the connection.\n");
   close(r->fd);
+	//release the remote structure
   r->fd = 0;
+	r->updated_on = 0;
 	
 	nthreads--;
 }
@@ -192,7 +232,7 @@ void *fn_remote_listener(void *nothing){
 	while(1){
 		int fd = -1;
 		pthread_t new_client;
-		printf("before accept() ...\n");
+		addr_size = sizeof(client_addr);
 		if ((fd = accept(server_socket, (struct sockaddr *)&client_addr, &addr_size)) < 0){
 			printf("remote: client connection failed\n");
 			continue;
@@ -211,6 +251,11 @@ void *fn_remote_listener(void *nothing){
 	return NULL;
 }
 
+
+void udp_thread(void *udp){
+	//create a udp listener socket
+	
+}
 
 void remote_start_thread(){
 	pthread_t listener_thread;

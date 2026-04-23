@@ -13,7 +13,6 @@
 #include "hist_disp.h"
 
 static const char *s_listen_on = "ws://0.0.0.0:8080";
-static const char *remote_url = "tcp://0.0.0.0:8081";
 static char s_web_root[1000];
 static char session_cookie[100];
 static struct mg_mgr mgr;  // Event manager
@@ -221,7 +220,6 @@ static void web_fn(struct mg_connection *c, int ev, void *ev_data, void *fn_data
 void *webserver_thread_function(void *server){
   mg_mgr_init(&mgr);  // Initialise event manager
   mg_http_listen(&mgr, s_listen_on, web_fn, NULL);  // Create HTTP listener
-	//mg_listen(&mgr, remote_url, tcp_fn, NULL); //create tcp listner
   for (;;) mg_mgr_poll(&mgr, 1000);             // Infinite event loop
 	printf("exiting webserver thread\n");
 }
