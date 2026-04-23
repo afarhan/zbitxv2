@@ -126,10 +126,11 @@ void *fn_remote_client(void *fd_client){
 	pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
 
 	data_socket = (intptr_t)fd_client;
-	{ int one = 1; setsockopt(data_socket, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)); }
+	int one = 1; 
+	setsockopt(data_socket, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)); 
 	struct remote *r = remote_new(data_socket);
 	r->fd = data_socket;
-	r->updated_on = millis();
+	r->updated_on = 0;
 	printf("remote: new thread with sock %d\n", data_socket);
 	if (!r){
 		printf("remote: max clients reached\n");
