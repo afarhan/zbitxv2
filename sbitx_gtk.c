@@ -1119,11 +1119,11 @@ void write_console(int style, char *raw_text){
 	if (strlen(raw_text) == 0)
 		return;
 	sprintf(remote_text, "%d %s\n", style, raw_text);
-	remote_write(remote_text);
 	hd_decorate(style, raw_text, decorated);
 	text = decorated;
 	web_write(style, text);
 	sprintf(remote_text, "%d %s", style, text);
+	remote_write(remote_text);
 	//move to a new line if the style has changed
 	if (style != console_style){
 		q_write(&q_web, '{');
