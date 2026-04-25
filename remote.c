@@ -40,7 +40,6 @@ static struct remote remote_table[MAX_THREADS];
 
 static void remote_send(int fd, char *m) {
  //send(fd, m, strlen(m), MSG_DONTWAIT);
- //printf("sock %d %s\n", fd, m);
  send(fd, m, strlen(m), MSG_NOSIGNAL | MSG_DONTWAIT);
 }
 

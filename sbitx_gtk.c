@@ -1122,7 +1122,7 @@ void write_console(int style, char *raw_text){
 	hd_decorate(style, raw_text, decorated);
 	text = decorated;
 	web_write(style, text);
-	sprintf(remote_text, "%d %s", style, text);
+	sprintf(remote_text, "%d %s\n", style, text);
 	remote_write(remote_text);
 	//move to a new line if the style has changed
 	if (style != console_style){
