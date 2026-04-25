@@ -86,7 +86,7 @@ static void get_logs(struct remote *r){
 
 	printf("remote: sending logs\n");
 	query[0] = 0;
-	row_id = -1;
+	row_id = 0;
 	logbook_query(NULL, row_id, logbook_path);
 	FILE *pf = fopen(logbook_path, "r");
 	if (!pf)
