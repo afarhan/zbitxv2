@@ -346,7 +346,7 @@ void set_rx1(int frequency){
 		return;
 	radio_tune_to(frequency);
 	freq_hdr = frequency;
-	if (sbitx_version  < 4) 
+	if (sbitx_version  < 4 || in_tx) 
 		set_lpf_40mhz(frequency);
 }
 
@@ -1439,7 +1439,7 @@ void sdr_request(char *request, char *response){
 	else if (!strcmp(cmd, "r1:freq")){
 		int d = atoi(value);
 		set_rx1(d);
-		//printf("Frequency set to %d\n", freq_hdr);
+		printf("Frequency set to %d\n", freq_hdr);
 		strcpy(response, "ok");	
 	} 
 	else if (!strcmp(cmd, "smeter")){

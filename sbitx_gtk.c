@@ -2672,10 +2672,19 @@ void set_operating_freq(int dial_freq, char *response){
 			sprintf(freq_request, "r1:freq=%d", dial_freq); 		
 	}
 	else if (!strcmp(split->value, "ON")){
-		if (!in_tx)
-			sprintf(freq_request, "r1:freq=%s", vfo_a->value);	// was vfo_b->value
-		else
-			sprintf(freq_request, "r1:freq=%d", dial_freq);
+		struct field *vfo = get_field("#vfo"); 
+		if (!in_tx){
+			if (vfo->value[0] == 'A')
+				sprintf(freq_request, "r1:freq=%s", vfo_a->value);
+			else
+				sprintf(freq_request, "r1:freq=%s", vfo_b->value);
+		}
+		else{
+			if (vfo->value[0] == 'A')
+				sprintf(freq_request, "r1:freq=%s", vfo_b->value);
+			else
+				sprintf(freq_request, "r1:freq=%s", vfo_a->value);
+		}
 	}
 	else
 	{
@@ -4606,12 +4615,19 @@ void do_control_action(char *cmd){
 	else if (!strcmp(request, "RX")){
 		tx_off();
 	}
-	else if (!strncmp(request, "RIT", 3))
+	else if (!strncmp(request, "RIT", 3)){
+		char response[100];
+		struct field *freq = get_field("r1:freq");
 		update_field(get_field("r1:freq"));
+		set_operating_freq(atoi(freq->value), response);
+	}
 	else if (!strncmp(request, "SPLIT", 5)){
+		char response[100];
+		struct field *freq = get_field("r1:freq");
 		update_field(get_field("r1:freq"));	
 		if (!strcmp(get_field("#vfo")->value, "B"))
 			set_field("#vfo", "A");
+		set_operating_freq(atoi(freq->value), response);
 	}
 	else if (!strcmp(request, "VFO B")){
 		struct field *f = get_field("r1:freq");
