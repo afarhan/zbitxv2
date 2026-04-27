@@ -93,7 +93,6 @@ static void get_logs(struct remote *r){
 		return;
 	while(fgets(row, sizeof(row), pf)){
 		sprintf(row_response, "QSO %s\n", row);
-		printf("remote: log > %s\n", row_response);
 		remote_send(r->fd, row_response); 
 	}
 	fclose(pf);

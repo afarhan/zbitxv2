@@ -65,11 +65,11 @@ int unpack_callsign(uint32_t n28, uint8_t ip, uint8_t i3, char* result)
     {
         // This is a 22-bit hash of a result
         // TODO: implement
-        strcpy(result, "<...>");
-        // result[0] = '<';
-        // int_to_dd(result + 1, n28, 7, false);
-        // result[8] = '>';
-        // result[9] = '\0';
+        //strcpy(result, "<...>");
+         result[0] = '<';
+         int_to_dd(result + 1, n28, 7, false);
+         result[8] = '>';
+         result[9] = '\0';
         return 0;
     }
 

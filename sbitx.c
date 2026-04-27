@@ -26,7 +26,7 @@ int set_field(char *, char *);  // This should be moved to a .h file
 #define DEBUG 0
 
 char audio_card[32];
-static int tx_shift = 512;
+static int center_bin = 512;
 
 FILE *pf_debug = NULL;
 
@@ -137,12 +137,14 @@ struct power_settings band_power[] ={
 struct Queue qremote;
 
 void radio_tune_to(u_int32_t f){
+	int freq_shift = (int)(46.875 * (1.0 * rx_list->tuned_bin));
+
 	if (rx_list->mode == MODE_CW)
-  	si5351bx_setfreq(2, f + bfo_freq - 24000 + TUNING_SHIFT - rx_pitch);
+  	si5351bx_setfreq(2, f + bfo_freq - freq_shift + TUNING_SHIFT - rx_pitch);
 	else if (rx_list->mode == MODE_CWR)
-  	si5351bx_setfreq(2, f + bfo_freq - 24000 + TUNING_SHIFT + rx_pitch);
+  	si5351bx_setfreq(2, f + bfo_freq - freq_shift + TUNING_SHIFT + rx_pitch);
 	else
-  	si5351bx_setfreq(2, f + bfo_freq - 24000 + TUNING_SHIFT);
+  	si5351bx_setfreq(2, f + bfo_freq - freq_shift + TUNING_SHIFT);
 
 //  printf("Setting radio rx_pitch %d\n", rx_pitch);
 }
@@ -232,14 +234,19 @@ void spectrum_update(){
 	//someone wants to try I Q channels 
 	//in hardware
 
+	//we shift the bins by the offset of the center bin 
+	int offset_bin = center_bin - MAX_BINS/4; 
+	//int offset_bin = 100; 
+
 	// this has been hand optimized to lower
 	//the inordinate cpu usage
 	for (int i = 1269; i < 1803; i++){
 
+		//int j = (i + offset_bin) % MAX_BINS;
 		fft_bins[i] = ((1.0 - spectrum_speed) * fft_bins[i]) + 
-			(spectrum_speed * cabs(fft_spectrum[i]));
+			(spectrum_speed * cabs(fft_spectrum[i - offset_bin]));
 
-		int y = power2dB(cnrmf(fft_bins[i])); 
+		int y = power2dB(cnrmf(fft_bins[i]));
 		spectrum_plot[i] = y;
 	}
 }
@@ -306,8 +313,8 @@ void set_lpf_40mhz(int frequency){
 		lpf = LPF_D;
 	else if (frequency < 10500000)		
 		lpf = LPF_C;
-	else if (frequency < 21500000 && sbitx_version >= 4)
-		lpf = LPF_B;
+//	else if (frequency < 21500000 && sbitx_version >= 4)
+//		lpf = LPF_B;
 	else if (frequency < 18500000)		
 		lpf = LPF_B;
 	else if (frequency < 30000000) 
@@ -346,7 +353,7 @@ void set_rx1(int frequency){
 		return;
 	radio_tune_to(frequency);
 	freq_hdr = frequency;
-	if (sbitx_version  < 4 || in_tx) 
+	if (sbitx_version  < 4) 
 		set_lpf_40mhz(frequency);
 }
 
@@ -839,6 +846,7 @@ void tx_process(
 			case MODE_CW:
 			case MODE_CWR:
 			case MODE_FT8:
+				//output_speaker[j] = (int)(i_sample * sidetone);
 				output_speaker[j] = (int)(i_sample * 20000000.0) * sidetone;
 				break;
 			case MODE_DIGITAL:
@@ -897,7 +905,7 @@ void tx_process(
 
 	//now rotate to the tx_bin 
 	//rememeber the AM is already a carrier modulated at 24 KHz
-	int shift = tx_shift;
+	int shift = center_bin;
 	if (r->mode == MODE_AM)
 		shift = 0;
 	for (i = 0; i < MAX_BINS; i++){
@@ -1030,6 +1038,8 @@ static int hw_settings_handler(void* user, const char* section,
 		si570_xtal = atoi(value);
 	if (!strcmp(name, "hw"))
 		sbitx_version = atoi(value);
+	if (!strcmp(name, "center_bin"))
+		center_bin = atoi(value);
 }
 
 static void read_hw_ini(){
@@ -1055,13 +1065,14 @@ void set_tx_power_levels(){
 
 	//search for power in the approved bands
 	for (int i = 0; i < sizeof(band_power)/sizeof(struct power_settings); i++){
+		//printf("%d: %d to %d\n", i, band_power[i].f_start, band_power[i].f_stop);
 		if (band_power[i].f_start <= freq_hdr && freq_hdr <= band_power[i].f_stop){
 	
 			//next we do a decimal coversion of the power reduction needed
 			tx_amp = (1.0 * tx_drive * band_power[i].scale);  
 		}	
 	}
-//	printf("tx_amp is set to %g for %d drive\n", tx_amp, tx_drive);
+	//printf("tx_amp is set to %g for %d drive\n", tx_amp, tx_drive);
 	//we keep the audio card output 'volume' constant'
 // Set a level for transmitting - right channel
 	sound_mixer(audio_card, "Master", 95);
@@ -1392,8 +1403,8 @@ void setup(char *audio_output_device){
 
 	add_rx(7000000, MODE_LSB, -3000, -300);
 	add_tx(7000000, MODE_LSB, -3000, -300);
-	rx_list->tuned_bin = 512;
-  tx_list->tuned_bin = 512;
+	rx_list->tuned_bin = center_bin;
+  tx_list->tuned_bin = center_bin;
 	tx_init(7000000, MODE_LSB, -3000, -150);
 
 	//detect the version of sbitx if not read from hw_settings
@@ -1439,7 +1450,7 @@ void sdr_request(char *request, char *response){
 	else if (!strcmp(cmd, "r1:freq")){
 		int d = atoi(value);
 		set_rx1(d);
-		printf("Frequency set to %d\n", freq_hdr);
+		//printf("Frequency set to %d\n", freq_hdr);
 		strcpy(response, "ok");	
 	} 
 	else if (!strcmp(cmd, "smeter")){

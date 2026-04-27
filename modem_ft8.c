@@ -823,15 +823,17 @@ void ft8_on_signal_report(){
 	if (m3[0] == 'R'){
 		//skip the 'R'
 		field_set("RECV", m3+1);
-		sprintf(reply_message, "%s %s RRR", call, mycall);  	
+		sprintf(reply_message, "%s %s RR73", call, mycall);  	
 		ft8_tx(reply_message, tx_pitch);
+		//getting an R-xx signal report indicates 
+		//we were responding to a cq
+		enter_qso();
 	}
 	else{ 
 		field_set("RECV", m3);	
 		sprintf(reply_message, "%s %s R%s", call, mycall, report_send);  	
 		ft8_tx(reply_message, tx_pitch);
 	}
-	enter_qso();
 }
 
 void ft8_process(char *message, int operation){
@@ -881,6 +883,7 @@ void ft8_process(char *message, int operation){
 		return;
 	}
 
+	//if we receive RRR or RR73, we were calling cq to begin
 	//the other station has sent either an RRR or an RR73
 	//this maybe arriving after we have cleared the log
 	//we don't check it against any fields of the logger
