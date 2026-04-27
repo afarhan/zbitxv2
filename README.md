@@ -40,7 +40,7 @@ cd ~/sbitxv2/zbitxv2
 Confirm that the new version is running properly before proceeding to upgrade the zbitx firmware
 
 # Step 2: upgrade the firmware on the zbitx front-panel
-- Download the firmware file from https://github.com/afarhan/zbitxv2/blob/main/zbitx_front_panel_v2.ino.uf2
+- Download the firmware file from https://github.com/afarhan/zbitxv2_front_panel/blob/main/zbitx_front_panel_v2.ino.uf2
 - Connect a USB cable from the port marked as CAT on the zbitx to your computer.
 - Turn off the zbitx and turn it back on *while holding the tuning knob pusehd down* this puts the front panel into upload mode
 - The zbitx front panel will now appear as an attached drive on your computer
