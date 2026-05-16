@@ -635,7 +635,8 @@ struct field main_controls[] = {
 		"", 4,6,1,0},
 	{"#passkey", NULL, 1000, -1000, 400, 149, "PASSKEY", 70, "123", FIELD_TEXT, FONT_SMALL, 
 		"", 0,32,1,0},
-
+        { "#wificonn", NULL, 1000, -1000, 50, 50, "WIFI-CONN", 40, "OFF",FIELD_TOGGLE, FONT_FIELD_VALUE,
+                "ON/OFF", 0,0,0, 0},
 	//moving global variables into fields 	
   { "#vfo_a_freq", NULL, 1000, -1000, 50, 50, "VFOA", 40, "14000000", FIELD_NUMBER, FONT_FIELD_VALUE,
     "", 500000,30000000,1,0},
@@ -4873,6 +4874,21 @@ void pre_ft8_check(char* message) {
 }
 
 /*
+   This is the function used to control from GUI the WiFi connection
+*/
+
+static void wifi_conn_set(int on)
+{
+    if (on) {
+        write_console(FONT_LOG, "WiFi client: reconnecting wlan0\n");
+        system("wpa_cli -i wlan0 reconnect >/tmp/zbitx-wifi.log 2>&1 &");
+    } else {
+        write_console(FONT_LOG, "WiFi client: disconnecting wlan0; uap0 AP remains active\n");
+        system("wpa_cli -i wlan0 disconnect >/tmp/zbitx-wifi.log 2>&1 &");
+    }
+}
+
+/*
 	These are user/remote entered commands.
 	The command format is "CMD VALUE", the CMD is an all uppercase text
 	that matches the label of a control.
@@ -5054,6 +5070,17 @@ void cmd_exec(char *cmd){
 		char buff[100];
 		sprintf(buff, "txpitch is set to %d Hz\n", get_cw_tx_pitch());
 		write_console(FONT_LOG, buff);
+	}
+	else if (!strcmp(exec, "WIFI-CONN")) {
+		if (!strcmp(args, "ON")) {
+		        set_field("#wificonn", "ON");
+		        wifi_conn_set(1);
+		} else if (!strcmp(args, "OFF")) {
+		        set_field("#wificonn", "OFF");
+		        wifi_conn_set(0);
+		} else {
+		        write_console(FONT_LOG, "Invalid WIFI-CONN value, use ON or OFF\n");
+		}
 	}
 /*	else if (!strcmp(exec, "PITCH")){
 		struct field *f = get_field_by_label(exec);
